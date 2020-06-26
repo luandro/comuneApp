@@ -42,10 +42,12 @@ function  comuneApp () {
   Sockets.startServer(serverPort);
 
 
-    const [nodeListString, setNodeListString] = useState("not available yet");
     const [nodeList, setNodeList] = useState([]);
 
-    var leaseList = [];
+    var leaseList;
+    if (leaseList === undefined){
+      leaseList = []
+    }
 
     Sockets.getIpAddress(ipList => {
       console.log('Ip address list', ipList);
@@ -68,31 +70,38 @@ function  comuneApp () {
 
       const nodeData = await httpSharedStateList();
       const dataMap = objToStrMap(nodeData);
-      // console.log(dataMap);
 
-      let listString = "" ;
-      let list = [];
-      dataMap.forEach (function (node, index) {
-        listString = listString + " " + index;
-        if (index.indexOf(":")==-1) {
-          let name = node.data.hostname;
-          if ((node.data.hostname==="*")||(node.data.hostname==="")){
-            name = index; //use ip
+      dataMap.forEach (function (node, dataMapIndex) {
+        if (dataMapIndex.indexOf(":")==-1) {
+          if (node.data!==undefined) {
+            let name = node.data.hostname;
+            if ((node.data.hostname==="*")||(node.data.hostname==="")){
+              name = dataMapIndex; //use ip
+            }
+            myNode = {ip: dataMapIndex, value: name, hasApp: false};
+
+            notFound = true;
+            leaseList.forEach(function (lease, leaseIndex) {
+              if (lease.ip === dataMapIndex) {
+                notFound = false;
+              }
+            })
+            if (notFound) {
+              console.log("not found ip in list")
+              leaseList.push(myNode);
+            }
           }
-          list.push({ip: index, value: name, hasApp: false});
         }
       })
 
+      if (leaseList.length !== 0) {
+        checkServer(0);
+      }
 
-      console.log ("list: ");
-      console.log (list);
-
-      leaseList = list;
-      setNodeListString(listString);
-      setNodeList(list);
+      setNodeList(leaseList);
 
       //var t = new Date().getTime ();
-      //console.log ("conferindo agora  "+t);
+      console.log (leaseList);
 
     }
 
@@ -117,11 +126,6 @@ function  comuneApp () {
     }
 
 
-    function fetchPeerList() {
-      if (leaseList.length !== 0) {
-        checkServer(0);
-        setNodeList(leaseList);
-      }
 
       // leaseList.forEach(function (host, index){
       //   ip = host.ip;
@@ -153,21 +157,21 @@ function  comuneApp () {
       //           // }
       //     })
       // }
-    }
+
 
     function sayHi(ip) {
-      config={
-        address: ip, //ip address of server
-        port: 8080, //port of socket server
-        timeout: 5000, // OPTIONAL (default 60000ms): timeout for response
-        reconnect:true, //OPTIONAL (default false): auto-reconnect on lost server
-        reconnectDelay:500, //OPTIONAL (default 500ms): how often to try to auto-reconnect
-        maxReconnectAttempts:10, //OPTIONAL (default infinity): how many time to attemp to auto-reconnect
-      }
-      Sockets.startClient(config);
-      Sockets.write("hi!");
-      Sockets.disconnect();
-      ///Alert.alert(ip);
+      // config={
+      //   address: ip, //ip address of server
+      //   port: 8080, //port of socket server
+      //   timeout: 5000, // OPTIONAL (default 60000ms): timeout for response
+      //   reconnect:true, //OPTIONAL (default false): auto-reconnect on lost server
+      //   reconnectDelay:500, //OPTIONAL (default 500ms): how often to try to auto-reconnect
+      //   maxReconnectAttempts:10, //OPTIONAL (default infinity): how many time to attemp to auto-reconnect
+      // }
+      // Sockets.startClient(config);
+      // Sockets.write("hi!");
+      // Sockets.disconnect();
+      Alert.alert(ip.toString());
 
     }
 
@@ -180,7 +184,6 @@ function  comuneApp () {
         console.log("strtng timer");
         this._interval = setInterval(() => {
           fetchNodeList();
-          fetchPeerList();
         }, 5000);
       }
 
@@ -208,8 +211,8 @@ function  comuneApp () {
                 {nodeList.map((item) => (
                     <View style={styles.separator} key={item.ip} >
                         <Button style={styles.buttonStyle} key={item.ip} title={item.value}
-                        disabled={item.hasApp ? false : true }
-                        onPress={() => sayHi(item.ip)}
+                        color={ item.hasApp ? "#f194ff" : "" }
+                        onPress={() => sayHi(item.hasApp)}
                         />
                     </View>
 

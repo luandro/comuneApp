@@ -15,74 +15,176 @@ import {
   Text,
   Button,
   StatusBar,
+  TouchableOpacity,
+  DeviceEventEmitter,
+  Alert,
 } from 'react-native';
 
 import {
   Colors,
 } from 'react-native/Libraries/NewAppScreen';
 
+import Sockets from 'react-native-sockets';
 
 import {strMapToObj, objToStrMap } from 'obj2map';
 import fetch from 'node-fetch';
 
-var list;
+// DeviceEventEmitter.addListener('socketServer_data', (payload) => {
+//       console.log('socketServer_data message:', payload.data);
+//       console.log('socketServer_data client id:', payload.client);
+//     });
 
 function  comuneApp () {
+
+//from https://github.com/rajiff/ws-react-demo
+
+  const serverPort = 8241;
+  Sockets.startServer(serverPort);
 
 
     const [nodeListString, setNodeListString] = useState("not available yet");
     const [nodeList, setNodeList] = useState([]);
 
-    var interval;
+    var leaseList = [];
 
-    const httpSharedStateMerge = (table) => {
-        const hostUrl = "http://thisnode.info/cgi-bin/shared-state/dnsmasq-hosts";
+    Sockets.getIpAddress(ipList => {
+      console.log('Ip address list', ipList);
+    }, err => {
+      console.log('getIpAddress_error', err);
+    })
+
+    const httpSharedStateList = () => {
+        const hostUrl = "http://thisnode.info/cgi-bin/shared-state/dnsmasq-leases";
         return fetch(hostUrl, {
             method: 'POST',
             body: JSON.stringify(strMapToObj(new Map([])))
         })
         .then(res => res.json())
-        .catch(err => console.log('Http merge error', err));
+        .catch(err => console.log('Http error', err));
     }
 
 
     async function fetchNodeList () {
 
-      const nodeData = await httpSharedStateMerge('dnsmasq-hosts');
+      const nodeData = await httpSharedStateList();
       const dataMap = objToStrMap(nodeData);
+      // console.log(dataMap);
 
       let listString = "" ;
       let list = [];
-      for (let name of dataMap.keys()) {
-         console.log (name.toString().split(" ")[1]);
-         listString = listString + name;
-         list.push({key: name.toString().split(" ")[0], value: name.toString().split(" ")[1]});
-      }
+      dataMap.forEach (function (node, index) {
+        listString = listString + " " + index;
+        if (index.indexOf(":")==-1) {
+          let name = node.data.hostname;
+          if ((node.data.hostname==="*")||(node.data.hostname==="")){
+            name = index; //use ip
+          }
+          list.push({ip: index, value: name, hasApp: false});
+        }
+      })
+
 
       console.log ("list: ");
       console.log (list);
 
-
+      leaseList = list;
       setNodeListString(listString);
       setNodeList(list);
 
-      var t = new Date().getTime ();
-      console.log ("conferindo agora  "+t);
+      //var t = new Date().getTime ();
+      //console.log ("conferindo agora  "+t);
 
     }
 
+    function checkServer (index) {
+      //the fancy recursion here is so that a new call only gets done
+      // after the last call is resolved
+        Sockets.isServerAvailable(leaseList[index].ip,serverPort,100,success => {
+          console.log("found server "+leaseList[index].ip);
+          leaseList[index].hasApp=true;
+          index++;
+          if ((index < leaseList.length)&&(leaseList.length!==0)) {
+              checkServer(index);
+          }
+        }, err => {
+              console.log("no server in "+leaseList[index].ip);
+              //leaseList[index].hasApp=false;
+              index++;
+              if ((index < leaseList.length)&&(leaseList.length!==0)) {
+                  checkServer(index);
+              }
+        })
+    }
+
+
+    function fetchPeerList() {
+      if (leaseList.length !== 0) {
+        checkServer(0);
+        setNodeList(leaseList);
+      }
+
+      // leaseList.forEach(function (host, index){
+      //   ip = host.ip;
+      //   console.log("chking ip "+ip+" INDEX "+index);
+      //   Sockets.isServerAvailable(ip,serverPort,100,success => {
+      //     console.log("found server "+ip);
+      //     leaseList[index].hasApp=true;
+      //   }, err => {
+      //         //console.log("no server in "+ip);
+      //         //leaseList[index].hasApp=false;
+      //   })
+
+
+      // for (let host of leaseList) {
+      //   ip = host.ip;
+      //   console.log("chking ip "+ip);
+      //     Sockets.isServerAvailable(ip,serverPort,100,success => {
+      //       console.log("found server "+ip);
+      //       if (peerList.includes(ip) == false) {
+      //             console.log("adding server "+ip);
+      //             peerList.push(ip);
+      //       }
+      //     }, err => {
+      //           console.log("no server in "+ip);
+      //           // TODO  remove non-existing servers
+      //           // if (peerList.includes(ip)) {
+      //           //   position = peerList.indexOf(ip);
+      //           //   peerList.splice(position,1); //remove the ip from the peer list
+      //           // }
+      //     })
+      // }
+    }
+
+    function sayHi(ip) {
+      config={
+        address: ip, //ip address of server
+        port: 8080, //port of socket server
+        timeout: 5000, // OPTIONAL (default 60000ms): timeout for response
+        reconnect:true, //OPTIONAL (default false): auto-reconnect on lost server
+        reconnectDelay:500, //OPTIONAL (default 500ms): how often to try to auto-reconnect
+        maxReconnectAttempts:10, //OPTIONAL (default infinity): how many time to attemp to auto-reconnect
+      }
+      Sockets.startClient(config);
+      Sockets.write("hi!");
+      Sockets.disconnect();
+      ///Alert.alert(ip);
+
+    }
 
     // Similar to componentDidMount and componentDidUpdate:
     // Will run every time the app is rendered
-    // by sending list as second argument, it will only render in the case list has changed
+    // by sending nodeList as second argument, it will only render in the case list has changed
     useEffect(() => {
       //will start a timer to check for the nodes every 5 seconds
-      this._interval = setInterval(() => {
-        fetchNodeList();
-      }, 5000);
+      if (this._interval === undefined) {
+        console.log("strtng timer");
+        this._interval = setInterval(() => {
+          fetchNodeList();
+          fetchPeerList();
+        }, 5000);
+      }
 
-    }, [list]);
-
+    }, [nodeList]);
 
       return (
         <>
@@ -98,21 +200,20 @@ function  comuneApp () {
               )}
               <View style={styles.body}>
                 <View style={styles.sectionContainer}>
-                  <Text style={styles.sectionTitle}>Step One</Text>
+                  <Text style={styles.sectionTitle}>ComuneApp</Text>
                   <Text style={styles.sectionDescription}>
-                    Edit <Text style={styles.highlight}>App.js</Text> to change this
-                    screen and then come back to see your edits list {nodeListString}
-                  </Text>
-                  {nodeList.map((item) => (
-                          <Button style={styles.sectionDescription} key={item.key} title={item.value} />
-                  ))}
-                </View>
-                <View style={styles.sectionContainer}>
-                  <Text style={styles.sectionTitle}>Learn More</Text>
-                  <Text style={styles.sectionDescription}>
-                    Read the docs to discover what to do next:
+                    This is the list of devices in your network. The ones with ComuneApp installed are enabled. Click to send them "Hi!"
                   </Text>
                 </View>
+                {nodeList.map((item) => (
+                    <View style={styles.separator} key={item.ip} >
+                        <Button style={styles.buttonStyle} key={item.ip} title={item.value}
+                        disabled={item.hasApp ? false : true }
+                        onPress={() => sayHi(item.ip)}
+                        />
+                    </View>
+
+                ))}
               </View>
             </ScrollView>
           </SafeAreaView>
@@ -156,6 +257,19 @@ const styles = StyleSheet.create({
       padding: 4,
       paddingRight: 12,
       textAlign: 'right',
+    },
+    buttonStyle: {
+      marginTop:10,
+      paddingTop:15,
+      // paddingBottom:15,
+      // marginLeft:30,
+      // marginRight:30,
+      alignItems: "center",
+    },
+    separator: {
+      marginVertical: 8,
+      borderBottomColor: '#737373',
+      borderBottomWidth: StyleSheet.hairlineWidth,
     },
   });
 

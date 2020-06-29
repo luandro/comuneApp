@@ -34,6 +34,16 @@ import fetch from 'node-fetch';
 //       console.log('socketServer_data client id:', payload.client);
 //     });
 
+
+var leaseList;
+
+//on new message
+DeviceEventEmitter.addListener('socketServer_data', (payload) => {
+  console.log('socketServer_data message:', payload.data);
+  console.log('socketServer_data client id:', payload.client);
+  Alert.alert(payload.data+" "+payload.client);
+});
+
 function  comuneApp () {
 
 //from https://github.com/rajiff/ws-react-demo
@@ -41,19 +51,26 @@ function  comuneApp () {
   const serverPort = 8241;
   Sockets.startServer(serverPort);
 
+  //will start a timer to check for the nodes every 5 seconds
+  if (this._interval === undefined) {
+    console.log("strtng timer");
+    this._interval = setInterval(() => {
+      fetchNodeList();
+    }, 5000);
+  }
 
-    const [nodeList, setNodeList] = useState([]);
-
-    var leaseList;
     if (leaseList === undefined){
       leaseList = []
     }
 
-    Sockets.getIpAddress(ipList => {
-      console.log('Ip address list', ipList);
-    }, err => {
-      console.log('getIpAddress_error', err);
-    })
+    const [nodeList, setNodeList] = useState([]);
+    let  [,setState]=useState();
+
+    // Sockets.getIpAddress(ipList => {
+    //   console.log('Ip address list', ipList);
+    // }, err => {
+    //   console.log('getIpAddress_error', err);
+    // })
 
     const httpSharedStateList = () => {
         const hostUrl = "http://thisnode.info/cgi-bin/shared-state/dnsmasq-leases";
@@ -66,7 +83,7 @@ function  comuneApp () {
     }
 
 
-    async function fetchNodeList () {
+  async function fetchNodeList () {
 
       const nodeData = await httpSharedStateList();
       const dataMap = objToStrMap(nodeData);
@@ -78,7 +95,7 @@ function  comuneApp () {
             if ((node.data.hostname==="*")||(node.data.hostname==="")){
               name = dataMapIndex; //use ip
             }
-            myNode = {ip: dataMapIndex, value: name, hasApp: false};
+            myNode = {ip: dataMapIndex, value: name, hasApp: false, r: 50};
 
             notFound = true;
             leaseList.forEach(function (lease, leaseIndex) {
@@ -97,20 +114,29 @@ function  comuneApp () {
       if (leaseList.length !== 0) {
         checkServer(0);
       }
+      //will start a timer to check for the nodes every 5 seconds
+      if (this._interval === undefined) {
+        console.log("strtng timer");
+        this._interval = setInterval(() => {
+          fetchNodeList();
+        }, 5000);
+      }
+
 
       setNodeList(leaseList);
-
+      setState({});
       //var t = new Date().getTime ();
       console.log (leaseList);
 
     }
 
-    function checkServer (index) {
+     async function checkServer (index) {
       //the fancy recursion here is so that a new call only gets done
       // after the last call is resolved
         Sockets.isServerAvailable(leaseList[index].ip,serverPort,100,success => {
           console.log("found server "+leaseList[index].ip);
           leaseList[index].hasApp=true;
+
           index++;
           if ((index < leaseList.length)&&(leaseList.length!==0)) {
               checkServer(index);
@@ -160,18 +186,18 @@ function  comuneApp () {
 
 
     function sayHi(ip) {
-      // config={
-      //   address: ip, //ip address of server
-      //   port: 8080, //port of socket server
-      //   timeout: 5000, // OPTIONAL (default 60000ms): timeout for response
-      //   reconnect:true, //OPTIONAL (default false): auto-reconnect on lost server
-      //   reconnectDelay:500, //OPTIONAL (default 500ms): how often to try to auto-reconnect
-      //   maxReconnectAttempts:10, //OPTIONAL (default infinity): how many time to attemp to auto-reconnect
-      // }
-      // Sockets.startClient(config);
-      // Sockets.write("hi!");
-      // Sockets.disconnect();
-      Alert.alert(ip.toString());
+      config={
+        address: ip, //ip address of server
+        port: 8080, //port of socket server
+        timeout: 5000, // OPTIONAL (default 60000ms): timeout for response
+        reconnect:true, //OPTIONAL (default false): auto-reconnect on lost server
+        reconnectDelay:500, //OPTIONAL (default 500ms): how often to try to auto-reconnect
+        maxReconnectAttempts:10, //OPTIONAL (default infinity): how many time to attemp to auto-reconnect
+      }
+      Sockets.startClient(config);
+      Sockets.write("hi!");
+      Sockets.disconnect();
+
 
     }
 
@@ -179,15 +205,10 @@ function  comuneApp () {
     // Will run every time the app is rendered
     // by sending nodeList as second argument, it will only render in the case list has changed
     useEffect(() => {
-      //will start a timer to check for the nodes every 5 seconds
-      if (this._interval === undefined) {
-        console.log("strtng timer");
-        this._interval = setInterval(() => {
-          fetchNodeList();
-        }, 5000);
-      }
 
-    }, [nodeList]);
+      console.log("redraw");
+
+    }, [leaseList]);
 
       return (
         <>
@@ -208,11 +229,11 @@ function  comuneApp () {
                     This is the list of devices in your network. The ones with ComuneApp installed are enabled. Click to send them "Hi!"
                   </Text>
                 </View>
-                {nodeList.map((item) => (
+                {leaseList.map((item) => (
                     <View style={styles.separator} key={item.ip} >
-                        <Button style={styles.buttonStyle} key={item.ip} title={item.value}
-                        color={ item.hasApp ? "#f194ff" : "" }
-                        onPress={() => sayHi(item.hasApp)}
+                        <Button key={item.ip} title={item.value}
+                        onPress={() => sayHi(item.ip)}
+                        disabled={item.hasApp? false : true }
                         />
                     </View>
 
@@ -260,14 +281,6 @@ const styles = StyleSheet.create({
       padding: 4,
       paddingRight: 12,
       textAlign: 'right',
-    },
-    buttonStyle: {
-      marginTop:10,
-      paddingTop:15,
-      // paddingBottom:15,
-      // marginLeft:30,
-      // marginRight:30,
-      alignItems: "center",
     },
     separator: {
       marginVertical: 8,

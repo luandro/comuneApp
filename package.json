@@ -13,7 +13,8 @@
     "node-fetch": "^2.6.0",
     "obj2map": "^1.0.0",
     "react": "16.9.0",
-    "react-native": "0.61.5"
+    "react-native": "0.61.5",
+    "react-native-sockets": "^0.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.6.2",
